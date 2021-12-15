@@ -50,7 +50,7 @@ struct matrix_t : protected std::vector<matrix_row_t> {
 
 
 struct extrema_t {
-    explicit extrema_t(size_t _high, size_t _nexthigh, size_t _low) : high(_high), nexthigh(_nexthigh), low(_low) {}
+    explicit extrema_t() = default;
     explicit extrema_t(const std::vector<double>& fx) {
         auto b   = fx[0] > fx[1];
         high     = b ? 0 : 1;
@@ -84,8 +84,20 @@ public:
     NelderMead(size_t dim, const function_t& f) : dim_(dim), f_(f) {}
 
     double minimize(std::vector<double>& x, double tol, size_t maxcount, std::ostream& out) {
-        extrema_t ex{0, 0, 0};
-        double eps = epsilon();
+        extrema_t ex;
+        
+        auto eps = []() -> double {
+            int p = 1;
+            for (double a, b;; ++p) {
+                a = 1. + std::pow(2, -1 * p);
+                b = a - 1.;
+                if (b <= 0) {
+                    break;
+                }
+            }
+
+            return std::pow(2, -1 * (p - 1));
+        }();
 
         // initial simplex: ndim+1 points to evaluate, and perturb starting points
         matrix_t S(dim_ + 1, dim_);
@@ -163,19 +175,6 @@ public:
 private:
     size_t dim_;
     const function_t& f_;
-
-    double epsilon() {
-        int p = 1;
-        for (double a, b;; ++p) {
-            a = 1. + std::pow(2, -1 * p);
-            b = a - 1.;
-            if (b <= 0) {
-                break;
-            }
-        }
-
-        return std::pow(2, -1 * (p - 1));
-    }
 
     bool update(matrix_t& S, const matrix_row_t& vMid, const matrix_row_t& vOpt, const extrema_t& ex, double scale,
                 double& fmax) {
