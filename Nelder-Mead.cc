@@ -206,6 +206,11 @@ int main() {
          [](const std::vector<double>& x) {
              return 100 * std::pow((x[1] - x[0] * x[0]), 2) + std::pow((1 - x[0]), 2);
          }},
+        {"Himmelblau's function",
+         {-1., -1.},
+         [](const std::vector<double>& x) {
+             return std::pow(x[0] * x[0] + x[1] - 11, 2) + std::pow(x[0] + x[1] * x[1] - 7, 2);
+         }},
         {"Fletcher-Powell's helical valley function",
          {-1., 2., 1.},
          [](const std::vector<double>& x) {
