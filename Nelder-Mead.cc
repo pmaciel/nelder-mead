@@ -12,10 +12,10 @@ struct matrix_row_t : std::vector<double> {
     using vector<double>::vector;
     using vector<double>::operator=;
 
-    friend matrix_row_t operator*(const matrix_row_t& a, double b) {
-        matrix_row_t c(a);
+    friend matrix_row_t operator*(double a, const matrix_row_t& b) {
+        matrix_row_t c(b);
         for (auto& e : c) {
-            e *= b;
+            e *= a;
         }
         return c;
     }
@@ -25,6 +25,15 @@ struct matrix_row_t : std::vector<double> {
         matrix_row_t c(a);
         for (size_t i = 0; i < c.size(); ++i) {
             c[i] += b[i];
+        }
+        return c;
+    }
+
+    friend matrix_row_t operator-(const matrix_row_t& a, const matrix_row_t& b) {
+        assert(a.size() == b.size());
+        matrix_row_t c(a);
+        for (size_t i = 0; i < c.size(); ++i) {
+            c[i] -= b[i];
         }
         return c;
     }
@@ -81,11 +90,11 @@ struct extrema_t {
 
 class NelderMead {
 public:
-    NelderMead(size_t dim, const function_t& f) : dim_(dim), f_(f) {}
+    NelderMead(size_t dim, const function_t& f) : dim_(dim), f_(f), alpha_(1.), gamma_(2.), rho_(0.5), sigma_(0.5) {}
 
     double minimize(std::vector<double>& x, double tol, size_t maxcount, std::ostream& out) {
         extrema_t ex;
-        
+
         auto eps = []() -> double {
             int p = 1;
             for (double a, b;; ++p) {
@@ -100,18 +109,18 @@ public:
         }();
 
         // initial simplex: ndim+1 points to evaluate, and perturb starting points
-        matrix_t S(dim_ + 1, dim_);
-        for (size_t i = 0; i < S.rows(); ++i) {
-            S.row(i) = x;
-            if (i < S.cols()) {
-                S(i, i) *= 1.01;
+        matrix_t X(dim_ + 1, dim_);
+        for (size_t i = 0; i < X.rows(); ++i) {
+            X.row(i) = x;
+            if (i < X.cols()) {
+                X(i, i) *= 1.01;
             }
         }
 
         // evaluate at the simplex points
         std::vector<double> fx;
-        fx.reserve(S.rows());
-        for (const auto& x : S) {
+        fx.reserve(X.rows());
+        for (const auto& x : X) {
             fx.emplace_back(f_(x));
         }
 
@@ -121,14 +130,14 @@ public:
 
             // find optimization direction (vOpt) from the worst (high) point to the centroid (vMid) of all other
             // points
-            matrix_row_t vMid(S.cols(), 0.);
-            for (size_t i = 0; i < S.rows(); ++i) {
+            matrix_row_t vMid(X.cols(), 0.);
+            for (size_t i = 0; i < X.rows(); ++i) {
                 if (i != ex.high) {
-                    vMid = vMid + S.row(i) * (1. / double(S.cols()));
+                    vMid = vMid + (1. / double(X.cols()) * X.row(i));
                 }
             }
 
-            auto vOpt = S.row(ex.high) + (vMid * -1.);
+            auto vOpt = X.row(ex.high) - vMid;
 
             auto& fhigh     = fx[ex.high];
             auto& fnexthigh = fx[ex.nexthigh];
@@ -140,19 +149,19 @@ public:
                 break;
             }
 
-            update(S, vMid, vOpt, ex, -1., fhigh);
+            update(vMid - alpha_ * vOpt, X.row(ex.high), fhigh);
 
             if (fhigh < flow) {
-                update(S, vMid, vOpt, ex, -2., fhigh);
+                update(vMid - gamma_ * vOpt, X.row(ex.high), fhigh);
             }
             else if (fhigh >= fnexthigh) {
-                if (!update(S, vMid, vOpt, ex, 0.5, fhigh)) {
+                if (!update(vMid + rho_ * vOpt, X.row(ex.high), fhigh)) {
                     // contract existing simplex, hoping to achieve an update
 
-                    for (size_t i = 0; i < S.rows(); ++i) {
+                    for (size_t i = 0; i < X.rows(); ++i) {
                         if (i != ex.low) {
-                            S.row(i) = (S.row(ex.low) + S.row(i)) * 0.5;
-                            fx[i]    = f_(S.row(i));
+                            X.row(i) = sigma_ * (X.row(ex.low) + X.row(i));
+                            fx[i]    = f_(X.row(i));
                         }
                     }
                 }
@@ -160,15 +169,15 @@ public:
 
             out << "iter: " << count << ",\ty: " << fx[ex.low] << ",\tx: ";
             const auto* sep = "";
-            for (size_t i = 0; i < S.cols(); i++) {
-                out << sep << S(i, i);
+            for (size_t i = 0; i < X.cols(); i++) {
+                out << sep << X(i, i);
                 sep = ",\t";
             }
             out << std::endl;
         }
 
         // return parameter values at the minimum (and the value of the minimum)
-        x = S.row(ex.low);
+        x = X.row(ex.low);
         return fx[ex.low];
     }
 
@@ -176,16 +185,18 @@ private:
     size_t dim_;
     const function_t& f_;
 
-    bool update(matrix_t& S, const matrix_row_t& vMid, const matrix_row_t& vOpt, const extrema_t& ex, double scale,
-                double& fmax) {
-        // update simplex if a new minimum is found, according to "scale"
+    const double alpha_;
+    const double gamma_;
+    const double rho_;
+    const double sigma_;
 
-        auto x  = vMid + (vOpt * scale);
+    bool update(const matrix_row_t& x, matrix_row_t& xhigh, double& fhigh) {
         auto fx = f_(x);
 
-        if (fmax > fx) {
-            fmax           = fx;
-            S.row(ex.high) = x;
+        // update simplex if a new minimum is found, according to "scale"
+        if (fhigh > fx) {
+            fhigh = fx;
+            xhigh = x;
             return true;
         }
 
@@ -223,6 +234,8 @@ int main() {
                     10 * std::pow((x[0] - x[3]), 4);
          }},
     };
+
+    std::cout.precision(16);
 
     for (const auto& test : tests) {
         std::cout << test.name << std::endl;
