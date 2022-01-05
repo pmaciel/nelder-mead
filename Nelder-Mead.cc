@@ -90,9 +90,10 @@ struct extrema_t {
 
 class NelderMead {
 public:
-    NelderMead(size_t dim, const function_t& f) : dim_(dim), f_(f), alpha_(1.), gamma_(2.), rho_(0.5), sigma_(0.5) {}
+    NelderMead(double alpha = 1., double gamma = 2., double rho = 0.5, double sigma = 0.5) :
+        alpha_(alpha), gamma_(gamma), rho_(rho), sigma_(sigma) {}
 
-    double minimize(std::vector<double>& x, double tol, size_t maxcount, std::ostream& out) {
+    double minimize(const function_t& f, std::vector<double>& x, double tol, size_t maxcount, std::ostream& out) {
         extrema_t ex;
 
         auto eps = []() -> double {
@@ -109,7 +110,8 @@ public:
         }();
 
         // initial simplex: ndim+1 points to evaluate, and perturb starting points
-        matrix_t X(dim_ + 1, dim_);
+        const auto dim = x.size();
+        matrix_t X(dim + 1, dim);
         for (size_t i = 0; i < X.rows(); ++i) {
             X.row(i) = x;
             if (i < X.cols()) {
@@ -121,7 +123,7 @@ public:
         std::vector<double> fx;
         fx.reserve(X.rows());
         for (const auto& x : X) {
-            fx.emplace_back(f_(x));
+            fx.emplace_back(f(x));
         }
 
         for (size_t count = 1; count < maxcount; ++count) {
@@ -149,19 +151,19 @@ public:
                 break;
             }
 
-            update(vMid - alpha_ * vOpt, X.row(ex.high), fhigh);
+            update(f, vMid - alpha_ * vOpt, X.row(ex.high), fhigh);
 
             if (fhigh < flow) {
-                update(vMid - gamma_ * vOpt, X.row(ex.high), fhigh);
+                update(f, vMid - gamma_ * vOpt, X.row(ex.high), fhigh);
             }
             else if (fhigh >= fnexthigh) {
-                if (!update(vMid + rho_ * vOpt, X.row(ex.high), fhigh)) {
+                if (!update(f, vMid + rho_ * vOpt, X.row(ex.high), fhigh)) {
                     // contract existing simplex, hoping to achieve an update
 
                     for (size_t i = 0; i < X.rows(); ++i) {
                         if (i != ex.low) {
                             X.row(i) = sigma_ * (X.row(ex.low) + X.row(i));
-                            fx[i]    = f_(X.row(i));
+                            fx[i]    = f(X.row(i));
                         }
                     }
                 }
@@ -182,16 +184,13 @@ public:
     }
 
 private:
-    size_t dim_;
-    const function_t& f_;
-
     const double alpha_;
     const double gamma_;
     const double rho_;
     const double sigma_;
 
-    bool update(const matrix_row_t& x, matrix_row_t& xhigh, double& fhigh) {
-        auto fx = f_(x);
+    bool update(const function_t& f, const matrix_row_t& x, matrix_row_t& xhigh, double& fhigh) {
+        auto fx = f(x);
 
         // update simplex if a new minimum is found, according to "scale"
         if (fhigh > fx) {
@@ -209,7 +208,7 @@ int main() {
     struct {
         const char* name;
         std::vector<double> x0;
-        function_t fx;
+        function_t f;
     } tests[]{
         {"Rosenbrock function",
          {-1.2, 1.},
@@ -240,9 +239,9 @@ int main() {
     for (const auto& test : tests) {
         std::cout << test.name << std::endl;
 
-        NelderMead nm(test.x0.size(), test.fx);
+        NelderMead nm;
         auto x = test.x0;
-        nm.minimize(x, 1.e-8, 5000, std::cout);
+        nm.minimize(test.f, x, 1.e-8, 5000, std::cout);
     }
 
     return 0;
