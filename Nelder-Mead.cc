@@ -100,19 +100,6 @@ private:
         size_t low      = 0;  // best (f(x))
     };
 
-    bool update(const function_t& f, const matrix_row_t& x, matrix_row_t& xhigh, double& fhigh) {
-        auto fx = f(x);
-
-        // update simplex if a new minimum is found, according to "scale"
-        if (fhigh > fx) {
-            fhigh = fx;
-            xhigh = x;
-            return true;
-        }
-
-        return false;
-    }
-
     const double alpha_;
     const double gamma_;
     const double rho_;
@@ -181,15 +168,39 @@ public:
                 break;
             }
 
-            update(f, vMid - alpha_ * vOpt, X.row(ex.high), fhigh);
+            {
+                auto x_ = vMid - alpha_ * vOpt;
+                auto f_ = f(x_);
+
+                // update simplex if a new minimum is found
+                if (fhigh > f_) {
+                    fhigh          = f_;
+                    X.row(ex.high) = x_;
+                }
+            }
 
             if (fhigh < flow) {
-                update(f, vMid - gamma_ * vOpt, X.row(ex.high), fhigh);
+                auto x_ = vMid - gamma_ * vOpt;
+                auto f_ = f(x_);
+
+                // update simplex if a new minimum is found
+                if (fhigh > f_) {
+                    fhigh          = f_;
+                    X.row(ex.high) = x_;
+                }
             }
             else if (fhigh >= fnexthigh) {
-                if (!update(f, vMid + rho_ * vOpt, X.row(ex.high), fhigh)) {
-                    // contract existing simplex, hoping to achieve an update
+                auto x_ = vMid + rho_ * vOpt;
+                auto f_ = f(x_);
 
+                // update simplex if a new minimum is found
+                if (fhigh > f_) {
+                    fhigh          = f_;
+                    X.row(ex.high) = x_;
+                }
+                else {
+
+                    // contract existing simplex, hoping to achieve an update
                     for (size_t i = 0; i < X.rows(); ++i) {
                         if (i != ex.low) {
                             X.row(i) = sigma_ * (X.row(ex.low) + X.row(i));
