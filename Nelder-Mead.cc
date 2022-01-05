@@ -2,98 +2,128 @@
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 
-using function_t = std::function<double(const std::vector<double>)>;
+namespace optim {
 
 
-struct matrix_row_t : std::vector<double> {
-    using vector<double>::vector;
-    using vector<double>::operator=;
+class Method {
+public:
+    using function_t = std::function<double(const std::vector<double>)>;
 
-    friend matrix_row_t operator*(double a, const matrix_row_t& b) {
-        matrix_row_t c(b);
-        for (auto& e : c) {
-            e *= a;
-        }
-        return c;
-    }
-
-    friend matrix_row_t operator+(const matrix_row_t& a, const matrix_row_t& b) {
-        assert(a.size() == b.size());
-        matrix_row_t c(a);
-        for (size_t i = 0; i < c.size(); ++i) {
-            c[i] += b[i];
-        }
-        return c;
-    }
-
-    friend matrix_row_t operator-(const matrix_row_t& a, const matrix_row_t& b) {
-        assert(a.size() == b.size());
-        matrix_row_t c(a);
-        for (size_t i = 0; i < c.size(); ++i) {
-            c[i] -= b[i];
-        }
-        return c;
-    }
+    virtual ~Method()                      = default;
+    virtual double minimize(const function_t& f, std::vector<double>& x, double tol, size_t maxcount,
+                            std::ostream&) = 0;
 };
 
 
-struct matrix_t : protected std::vector<matrix_row_t> {
-    matrix_t(size_t Ni, size_t Nj) : vector<matrix_row_t>(Ni, matrix_row_t(Nj, 0)) {}
+class NelderMead : public Method {
+private:
+    struct matrix_row_t : std::vector<double> {
+        using vector<double>::vector;
+        using vector<double>::operator=;
 
-    matrix_row_t::value_type operator()(size_t i, size_t j) const { return at(i).at(j); }
-    matrix_row_t::value_type& operator()(size_t i, size_t j) { return at(i).at(j); }
-
-    const matrix_row_t& row(size_t i) const { return at(i); }
-    matrix_row_t& row(size_t i) { return at(i); }
-
-    size_t rows() const { return size(); }
-    size_t cols() const { return empty() ? 0 : front().size(); }
-
-    using vector<matrix_row_t>::begin;
-    using vector<matrix_row_t>::end;
-    using vector<matrix_row_t>::at;
-};
-
-
-struct extrema_t {
-    explicit extrema_t() = default;
-    explicit extrema_t(const std::vector<double>& fx) {
-        auto b   = fx[0] > fx[1];
-        high     = b ? 0 : 1;
-        nexthigh = b ? 1 : 0;
-        low      = b ? 1 : 0;
-
-        for (size_t i = 2; i < fx.size(); ++i) {
-            auto fi = fx[i];
-
-            if (fi <= fx[low]) {
-                low = i;
+        friend matrix_row_t operator*(double a, const matrix_row_t& b) {
+            matrix_row_t c(b);
+            for (auto& e : c) {
+                e *= a;
             }
-            else if (fi > fx[high]) {
-                nexthigh = high;
-                high     = i;
+            return c;
+        }
+
+        friend matrix_row_t operator+(const matrix_row_t& a, const matrix_row_t& b) {
+            assert(a.size() == b.size());
+            matrix_row_t c(a);
+            for (size_t i = 0; i < c.size(); ++i) {
+                c[i] += b[i];
             }
-            else if (fi > fx[nexthigh]) {
-                nexthigh = i;
+            return c;
+        }
+
+        friend matrix_row_t operator-(const matrix_row_t& a, const matrix_row_t& b) {
+            assert(a.size() == b.size());
+            matrix_row_t c(a);
+            for (size_t i = 0; i < c.size(); ++i) {
+                c[i] -= b[i];
+            }
+            return c;
+        }
+    };
+
+
+    struct matrix_t : protected std::vector<matrix_row_t> {
+        matrix_t(size_t Ni, size_t Nj) : vector<matrix_row_t>(Ni, matrix_row_t(Nj, 0)) {}
+
+        matrix_row_t::value_type operator()(size_t i, size_t j) const { return at(i).at(j); }
+        matrix_row_t::value_type& operator()(size_t i, size_t j) { return at(i).at(j); }
+
+        const matrix_row_t& row(size_t i) const { return at(i); }
+        matrix_row_t& row(size_t i) { return at(i); }
+
+        size_t rows() const { return size(); }
+        size_t cols() const { return empty() ? 0 : front().size(); }
+
+        using vector<matrix_row_t>::begin;
+        using vector<matrix_row_t>::end;
+        using vector<matrix_row_t>::at;
+    };
+
+
+    struct extrema_t {
+        explicit extrema_t() = default;
+        explicit extrema_t(const std::vector<double>& fx) {
+            auto b   = fx[0] > fx[1];
+            high     = b ? 0 : 1;
+            nexthigh = b ? 1 : 0;
+            low      = b ? 1 : 0;
+
+            for (size_t i = 2; i < fx.size(); ++i) {
+                auto fi = fx[i];
+
+                if (fi <= fx[low]) {
+                    low = i;
+                }
+                else if (fi > fx[high]) {
+                    nexthigh = high;
+                    high     = i;
+                }
+                else if (fi > fx[nexthigh]) {
+                    nexthigh = i;
+                }
             }
         }
+
+        size_t high     = 0;  // worst (f(x))
+        size_t nexthigh = 0;  // 2nd worse (f(x))
+        size_t low      = 0;  // best (f(x))
+    };
+
+    bool update(const function_t& f, const matrix_row_t& x, matrix_row_t& xhigh, double& fhigh) {
+        auto fx = f(x);
+
+        // update simplex if a new minimum is found, according to "scale"
+        if (fhigh > fx) {
+            fhigh = fx;
+            xhigh = x;
+            return true;
+        }
+
+        return false;
     }
 
-    size_t high     = 0;  // worst (f(x))
-    size_t nexthigh = 0;  // 2nd worse (f(x))
-    size_t low      = 0;  // best (f(x))
-};
+    const double alpha_;
+    const double gamma_;
+    const double rho_;
+    const double sigma_;
 
-
-class NelderMead {
 public:
     NelderMead(double alpha = 1., double gamma = 2., double rho = 0.5, double sigma = 0.5) :
-        alpha_(alpha), gamma_(gamma), rho_(rho), sigma_(sigma) {}
+        Method(), alpha_(alpha), gamma_(gamma), rho_(rho), sigma_(sigma) {}
 
-    double minimize(const function_t& f, std::vector<double>& x, double tol, size_t maxcount, std::ostream& out) {
+    double minimize(const function_t& f, std::vector<double>& x, double tol, size_t maxcount,
+                    std::ostream& out) override {
         extrema_t ex;
 
         auto eps = []() -> double {
@@ -182,33 +212,17 @@ public:
         x = X.row(ex.low);
         return fx[ex.low];
     }
-
-private:
-    const double alpha_;
-    const double gamma_;
-    const double rho_;
-    const double sigma_;
-
-    bool update(const function_t& f, const matrix_row_t& x, matrix_row_t& xhigh, double& fhigh) {
-        auto fx = f(x);
-
-        // update simplex if a new minimum is found, according to "scale"
-        if (fhigh > fx) {
-            fhigh = fx;
-            xhigh = x;
-            return true;
-        }
-
-        return false;
-    }
 };
+
+
+}  // namespace optim
 
 
 int main() {
     struct {
         const char* name;
         std::vector<double> x0;
-        function_t f;
+        optim::Method::function_t f;
     } tests[]{
         {"Rosenbrock function",
          {-1.2, 1.},
@@ -237,11 +251,11 @@ int main() {
     std::cout.precision(16);
 
     for (const auto& test : tests) {
+        std::unique_ptr<optim::Method> opt(new optim::NelderMead);
         std::cout << test.name << std::endl;
 
-        NelderMead nm;
         auto x = test.x0;
-        nm.minimize(test.f, x, 1.e-8, 5000, std::cout);
+        opt->minimize(test.f, x, 1.e-8, 5000, std::cout);
     }
 
     return 0;
