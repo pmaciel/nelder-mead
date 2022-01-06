@@ -13,6 +13,13 @@ class Method {
 public:
     using function_t = std::function<double(const std::vector<double>)>;
 
+    Method()              = default;
+    Method(const Method&) = delete;
+    Method(Method&&)      = default;
+
+    void operator=(const Method&) = delete;
+    Method& operator=(Method&&) = default;
+
     virtual ~Method()                      = default;
     virtual double minimize(const function_t& f, std::vector<double>& x, double tol, size_t maxcount,
                             std::ostream&) = 0;
@@ -107,7 +114,7 @@ private:
 
 public:
     NelderMead(double alpha = 1., double gamma = 2., double rho = 0.5, double sigma = 0.5) :
-        Method(), alpha_(alpha), gamma_(gamma), rho_(rho), sigma_(sigma) {}
+        alpha_(alpha), gamma_(gamma), rho_(rho), sigma_(sigma) {}
 
     double minimize(const function_t& f, std::vector<double>& x, double tol, size_t maxcount,
                     std::ostream& out) override {
